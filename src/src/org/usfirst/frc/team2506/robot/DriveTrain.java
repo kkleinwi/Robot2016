@@ -17,10 +17,10 @@ public class DriveTrain {
 	
 	public void drive(Joystick joystick, int leftAxis, int rightAxis) {
 		leftMaster.drive(joystick.getRawAxis(leftAxis));
-		rightMaster.drive(joystick.getRawAxis(rightAxis));
+		rightMaster.drive(-joystick.getRawAxis(rightAxis));
 	}
 	public void dive(int leftPercent, int rightPercent) {
 		leftMaster.drive(leftPercent);
-		rightMaster.drive(rightPercent);
+		rightMaster.drive(-rightPercent);
 	}
 }

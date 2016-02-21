@@ -1,6 +1,7 @@
 
 package org.usfirst.frc.team2506.robot;
 
+import edu.wpi.first.wpilibj.CANTalon;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.Timer;
@@ -22,8 +23,8 @@ public class Robot extends IterativeRobot {
     SendableChooser chooser;
     
     DriveTrain driveTrain = new DriveTrain(3, 1, 2, 0);
-    Roller bigRoller = new Roller(4, false);
-    Roller littleRoller = new Roller(5, true);
+    CANTalon bigRoller = new CANTalon(4);
+    CANTalon littleRoller = new CANTalon(5);
     Arms littleArms = new Arms(2, 3);
     Arms bigArms = new Arms(0, 1);
     Ultrasonic ultrasonic = new Ultrasonic(0, 1);
@@ -67,10 +68,23 @@ public class Robot extends IterativeRobot {
      */
     public void teleopPeriodic() {
         driveTrain.drive(playerOne, 1, 5);
-        bigRoller.main(playerTwo, 5, 6, ultrasonic);
-        littleRoller.main(playerTwo, 5, 6, null);
+       // bigRoller.main(playerTwo, 5, 6, ultrasonic);
+       //ittleRoller.main(playerTwo, 3, 2, ultrasonic);
         littleArms.main(playerTwo, 4);
         bigArms.main(playerTwo, 3);
+        
+      	if (playerTwo.getRawAxis(3) >= 0.1 && ultrasonic.getRangeMM() > 150)
+      		littleRoller.set(0.3);
+      	else if (playerTwo.getRawAxis(2) >= 0.1)
+      		littleRoller.set(-1);
+      	else
+      		littleRoller.set(0);
+      	if (playerTwo.getRawButton(5))
+      		bigRoller.set(0.75);
+      	else if (playerTwo.getRawButton(6))
+      		bigRoller.set(-0.75);
+      	else
+      		bigRoller.set(0);
     }
     
     /**
@@ -81,5 +95,3 @@ public class Robot extends IterativeRobot {
     }
     
 }
-
-
