@@ -19,7 +19,7 @@ public class DriveTrain {
 		leftMaster.drive(joystick.getRawAxis(leftAxis));
 		rightMaster.drive(-joystick.getRawAxis(rightAxis));
 	}
-	public void dive(int leftPercent, int rightPercent) {
+	public void drive(double leftPercent, double rightPercent) {
 		leftMaster.drive(leftPercent);
 		rightMaster.drive(-rightPercent);
 	}

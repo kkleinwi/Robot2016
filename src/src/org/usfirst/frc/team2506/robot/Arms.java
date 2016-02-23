@@ -28,6 +28,10 @@ public class Arms {
         	armsClear = true;
 	}
 	
+	public DoubleSolenoid getSolenoid() {
+		return solenoid;
+	}
+	
 	public DoubleSolenoid.Value getStatus() {
 		return solenoid.get();
 	}
