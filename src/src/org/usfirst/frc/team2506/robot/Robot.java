@@ -10,6 +10,7 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.Ultrasonic;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import java.io.*;
 
 /**
  * The VM is configured to automatically run this class, and to call the
@@ -21,8 +22,13 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 public class Robot extends IterativeRobot {
     final String defaultAuto = "Default";
     final String customAuto = "My Auto";
+    final double LEFT_RATE = 0.5;
+    final double RIGHT_RATE = 0.4;
     String autoSelected;
     SendableChooser chooser;
+    
+    Writer writer = new Writer("test5.dat");
+    Reader reader = new Reader("test5.dat");
     
     DriveTrain driveTrain = new DriveTrain(3, 1, 2, 0);
     CANTalon bigRoller = new CANTalon(4);
@@ -30,15 +36,22 @@ public class Robot extends IterativeRobot {
     Arms littleArms = new Arms(2, 3);
     Arms bigArms = new Arms(0, 1);
     Ultrasonic ultrasonic = new Ultrasonic(1, 0);
+    Ultrasonic secondUltrasonic = new Ultrasonic(8, 9);
     Joystick playerOne = new Joystick(0);
     Joystick playerTwo = new Joystick(1);
     int ultraLoop = 0;
+    int autoClock = 0;
 	
     /**
      * This function is run when the robot is first started up and should be
      * used for any initialization code.
      */
     public void robotInit() {
+    	ultrasonic.setEnabled(true);
+    	ultrasonic.setAutomaticMode(true);
+    	secondUltrasonic.setEnabled(true);
+    	secondUltrasonic.setAutomaticMode(true);
+    	System.out.println("PATH: " + System.getProperty("user.dir"));
         chooser = new SendableChooser();
         chooser.addDefault("Default Auto", defaultAuto);
         chooser.addObject("My Auto", customAuto);
@@ -76,6 +89,7 @@ public class Robot extends IterativeRobot {
     	autoSelected = (String) chooser.getSelected();
 //		autoSelected = SmartDashboard.getString("Auto Selector", defaultAuto);
 		System.out.println("Auto selected: " + autoSelected);
+		autoClock = 0;
 	/*	littleArms.getSolenoid().set(DoubleSolenoid.Value.kForward);
 		bigArms.getSolenoid().set(DoubleSolenoid.Value.kReverse);
 		
@@ -98,11 +112,28 @@ public class Robot extends IterativeRobot {
      * This function is called periodically during autonomous
      */
     public void autonomousPeriodic(){
+
+ /*   	String line = reader.readLine();
+    	double left = Double.valueOf(line.substring(0, line.indexOf(' ')));
+    	double right = Double.valueOf(line.substring(line.indexOf(' ') + 1, line.length() - 1));
+    	driveTrain.drive(left, right);
+*/
+    	if (autoClock++ < 100 && secondUltrasonic.getRangeInches() >= 36)
+    	{
+    		driveTrain.drive(LEFT_RATE,  RIGHT_RATE);
+    	}
+    	else
+    	{
+    		driveTrain.drive(0,  0);
+    	}
     }
 
     public void teleopInit() {
+    	
     	ultrasonic.setEnabled(true);
     	ultrasonic.setAutomaticMode(true);
+    	secondUltrasonic.setEnabled(true);
+    	secondUltrasonic.setAutomaticMode(true);
     }
     /**
      * This function is called periodically during operator control
@@ -112,10 +143,12 @@ public class Robot extends IterativeRobot {
     	double axisFive = playerOne.getRawAxis(Xbox.RIGHT_Y_AXIS);
     	if (playerOne.getRawAxis(Xbox.LEFT_TRIGGER) >= 0.1)
     		driveTrain.drive(axisOne * 0.3, axisFive * 0.3);
-    	else if (axisOne > 0.09 || axisOne < -0.09 || axisFive > 0.09 || axisFive < -0.09)
+    	else if (axisOne > 0.09 || axisOne < -0.09 || axisFive > 0.09 || axisFive < -0.09) {
     		driveTrain.drive(playerOne, Xbox.LEFT_Y_AXIS, Xbox.RIGHT_Y_AXIS);
+    	}
     	else
     		driveTrain.drive(0, 0);
+    	writer.write(String.valueOf(axisOne) + " " + String.valueOf(axisFive) + "\n");
        // bigRoller.main(playerTwo, 5, 6, ultrasonic);
        //ittleRoller.main(playerTwo, 3, 2, ultrasonic);
         littleArms.main(playerTwo, 4);
@@ -134,8 +167,10 @@ public class Robot extends IterativeRobot {
       	else
       		bigRoller.set(0);
       	ultraLoop++;
+      	if (playerOne.getRawButton(Xbox.A_BUTTON))
+      		writer.close();
       	if (ultraLoop % 30 == 0)
-			System.out.println("Left: " + playerOne.getRawAxis(1) + " Right: " + playerOne.getRawAxis(5));
+      		System.out.println(secondUltrasonic.getRangeInches());
     }
     
     /**

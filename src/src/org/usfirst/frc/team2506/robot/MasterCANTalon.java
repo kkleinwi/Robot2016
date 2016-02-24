@@ -6,7 +6,7 @@ import edu.wpi.first.wpilibj.CANTalon.TalonControlMode;
 
 public class MasterCANTalon {
 	private CANTalon talon;
-	private final int MAX_RPM = 800;
+	private final int MAX_RPM = 810;
 	
 	public MasterCANTalon(int port) {
 		talon = new CANTalon(port);
