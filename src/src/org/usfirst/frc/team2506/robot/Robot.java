@@ -1,16 +1,17 @@
-
 package org.usfirst.frc.team2506.robot;
 
-import edu.wpi.first.wpilibj.CANTalon;
+import org.opencv.core.Rect;
+import org.opencv.imgproc.Imgproc;
+
+import edu.wpi.cscore.CvSource;
+import edu.wpi.cscore.UsbCamera;
+import edu.wpi.cscore.VideoCamera.WhiteBalance;
 import edu.wpi.first.wpilibj.CameraServer;
-import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.Joystick;
-import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.Ultrasonic;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import java.io.*;
+import edu.wpi.first.wpilibj.vision.VisionThread;
 
 /**
  * The VM is configured to automatically run this class, and to call the
@@ -20,164 +21,173 @@ import java.io.*;
  * directory.
  */
 public class Robot extends IterativeRobot {
-    final String defaultAuto = "Default";
-    final String customAuto = "My Auto";
-    final double LEFT_RATE = 0.5;
-    final double RIGHT_RATE = 0.4;
-    String autoSelected;
-    SendableChooser chooser;
-    
-    Writer writer = new Writer("test5.dat");
-    Reader reader = new Reader("test5.dat");
-    
-    DriveTrain driveTrain = new DriveTrain(3, 1, 2, 0);
-    CANTalon bigRoller = new CANTalon(4);
-    CANTalon littleRoller = new CANTalon(5);
-    Arms littleArms = new Arms(2, 3);
-    Arms bigArms = new Arms(0, 1);
-    Ultrasonic ultrasonic = new Ultrasonic(1, 0);
-    Ultrasonic secondUltrasonic = new Ultrasonic(8, 9);
-    Joystick playerOne = new Joystick(0);
-    Joystick playerTwo = new Joystick(1);
-    int ultraLoop = 0;
-    int autoClock = 0;
+	private double centerX;
+	private VisionThread visionThread;
+	private final Object imgLock = new Object();
+	private Rect found;
 	
-    /**
-     * This function is run when the robot is first started up and should be
-     * used for any initialization code.
-     */
-    public void robotInit() {
-    	ultrasonic.setEnabled(true);
-    	ultrasonic.setAutomaticMode(true);
-    	secondUltrasonic.setEnabled(true);
-    	secondUltrasonic.setAutomaticMode(true);
-    	System.out.println("PATH: " + System.getProperty("user.dir"));
-        chooser = new SendableChooser();
-        chooser.addDefault("Default Auto", defaultAuto);
-        chooser.addObject("My Auto", customAuto);
-        SmartDashboard.putData("Auto choices", chooser);
-        camera();
-        
-    }
-    
-	public void camera (){
-	    SendableChooser cameraOn = new SendableChooser();
-        cameraOn.addDefault("Default Auto", defaultAuto);
-        cameraOn.addObject("My Auto", customAuto);
-		final String defaultAuto = "Default";
-	    final String customAuto = "My Auto";
-	    
-        cameraOn.addDefault("Default Auto", defaultAuto);
-        cameraOn.addObject("My Auto", customAuto);
-        SmartDashboard.putData("Auto choices", cameraOn);
-        CameraServer camera = CameraServer.getInstance();
-    	camera.setQuality(125);
-    	camera.startAutomaticCapture("cam0");
-	}
-    
-    
+	private static final int IMG_WIDTH = 320;
+	private static final int IMG_HEIGHT = 240;
+	
+	private static double CALIB_DISTANCE = 6.0; // calibrate with target 6' from camera
+	private static double CALIB_PIXHEIGHT = 57.0; // target height in pixels at calibration distance
+	private static double TARGET_HEIGHT = 1.0; // target actual height in feet
+	
+	private static double SPEED_SPIN = 0.2;
+	
+	private double hLow = 60;
+	private double hHigh = 100;
+	private double sLow = 150;
+	private double sHigh = 255;
+	private double vLow = 200;
+	private double vHigh= 255;
+	private double areaMin = 300;
+	private double aspectLow = 0;
+	private double aspectHigh = 1000;
+	private GripPipeline pipeline;
+	private double angle = 0;
+	
 	/**
-	 * This autonomous (along with the chooser code above) shows how to select between different autonomous modes
-	 * using the dashboard. The sendable chooser code works with the Java SmartDashboard. If you prefer the LabVIEW
-	 * Dashboard, remove all of the chooser code and uncomment the getString line to get the auto name from the text box
-	 * below the Gyro
-	 *
-	 * You can add additional auto modes by adding additional comparisons to the switch structure below with additional strings.
-	 * If using the SendableChooser make sure to add them to the chooser code above as well.
+	 * This function is run when the robot is first started up and should be
+	 * used for any initialization code.
 	 */
-    public void autonomousInit() {
-    	autoSelected = (String) chooser.getSelected();
-//		autoSelected = SmartDashboard.getString("Auto Selector", defaultAuto);
-		System.out.println("Auto selected: " + autoSelected);
-		autoClock = 0;
-	/*	littleArms.getSolenoid().set(DoubleSolenoid.Value.kForward);
-		bigArms.getSolenoid().set(DoubleSolenoid.Value.kReverse);
+	@Override
+	public void robotInit() {
+		SmartDashboard.putNumber("hlow", hLow);
+		SmartDashboard.putNumber("hhigh", hHigh);
+		SmartDashboard.putNumber("slow", sLow);
+		SmartDashboard.putNumber("shigh", sHigh);
+		SmartDashboard.putNumber("vlow", vLow);
+		SmartDashboard.putNumber("vhigh", vHigh);
+		SmartDashboard.putNumber("areaMin", areaMin);
+		SmartDashboard.putNumber("aspectLow", aspectLow);
+		SmartDashboard.putNumber("aspectHigh", aspectHigh);
+
+		UsbCamera camera = CameraServer.getInstance().startAutomaticCapture();
+		camera.setResolution(IMG_WIDTH, IMG_HEIGHT);
+		camera.setWhiteBalanceManual(WhiteBalance.kFixedIndoor);
+		camera.setBrightness(10);
+		camera.setExposureManual(10);
+		CvSource vsource = CameraServer.getInstance().putVideo("test", 320, 200);
+
+		pipeline = new GripPipeline(vsource);
+		pipeline.sethLow(hLow);
+		pipeline.sethHigh(hHigh);
+		pipeline.setsLow(sLow);
+		pipeline.setsHigh(sHigh);
+		pipeline.setvLow(vLow);
+		pipeline.setvHigh(vHigh);
+		pipeline.setAreaMin(areaMin);
+		pipeline.setAspectLow(aspectLow);
+		pipeline.setAspectHigh(aspectHigh);
+		visionThread = new VisionThread(camera, pipeline, pipeline -> {
+			if (!pipeline.filterContoursOutput().isEmpty()) {
+				Rect r = Imgproc.boundingRect(pipeline.filterContoursOutput().get(0));
+				synchronized (imgLock) {
+					found = r;
+				}
+			}
+			else
+			{
+				found = null;
+			}
+		});
+		visionThread.start();
+	}
+
+	
+	DoubleTankDrive drive = new DoubleTankDrive (3, 1, 2, 0);
+	Joystick joystick = new Joystick (0);
+	double noTargetCount = 0;
+	/**
+	 * This function is called periodically during operator control
+	 */
+	@Override
+	public void teleopPeriodic() {
+		hLow = SmartDashboard.getNumber("hlow", 0);
+		hHigh = SmartDashboard.getNumber("hhigh", 180);
+		sLow = SmartDashboard.getNumber("slow", 0);
+		sHigh = SmartDashboard.getNumber("shigh", 255);
+		vLow = SmartDashboard.getNumber("vlow", 0);
+		vHigh = SmartDashboard.getNumber("vhigh", 255);
+		areaMin = SmartDashboard.getNumber("areaMin", 0);
+		aspectLow = SmartDashboard.getNumber("aspectLow", 0);
+		aspectHigh = SmartDashboard.getNumber("aspectHigh", 1000);
+		pipeline.sethLow(hLow);
+		pipeline.sethHigh(hHigh);
+		pipeline.setsLow(sLow);
+		pipeline.setsHigh(sHigh);
+		pipeline.setvLow(vLow);
+		pipeline.setvHigh(vHigh);
+		pipeline.setAreaMin(areaMin);
+		pipeline.setAspectLow(aspectLow);
+		pipeline.setAspectHigh(aspectHigh);
 		
-		try {
-			Thread.sleep(2000);
-			driveTrain.drive(0.5, 0.65);
-			Thread.sleep(500);
-			driveTrain.drive(0.5, 0.65);
-			Thread.sleep(500);
-			driveTrain.drive(0.5, 0.65);
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		boolean targetAcq = false;
+		
+		synchronized(imgLock)
+		{
+			if (found != null)
+			{
+				double center = found.x + found.width / 2;
+				double centerOffset = center - IMG_WIDTH / 2;
+				
+				double range = CALIB_PIXHEIGHT / found.height * CALIB_DISTANCE; // calibration
+				double offset = (centerOffset * TARGET_HEIGHT * range) / (CALIB_PIXHEIGHT * CALIB_DISTANCE);
+				angle = Math.atan2(offset, range) * 180 / Math.PI;
+				targetAcq = true;
+				
+				SmartDashboard.putNumber("target x", found.x);
+				SmartDashboard.putNumber("target y", found.y);
+				SmartDashboard.putNumber("target width", found.width);
+				SmartDashboard.putNumber("target height", found.height);
+				SmartDashboard.putNumber("range", range);
+				SmartDashboard.putNumber("offset", offset);
+				SmartDashboard.putNumber("angle", angle);
+				SmartDashboard.putString("state", "target acquired");
+				found = null;
+				noTargetCount = 0;
+			}
+			else
+			{
+				if (noTargetCount++ > 25)
+				{
+					SmartDashboard.putString("state", "no target");
+				}
+			}
 		}
-		driveTrain.drive(0, 0);
-		*/
-    }
+		
+		if (joystick.getRawButton(1))
+		{
+			if (noTargetCount <= 20)
+			{
+				if (angle > 0.5)
+				{
+					System.out.println("drive CW");
+					drive.drive(-SPEED_SPIN, SPEED_SPIN);
+				}
+				else if (angle < -0.5)
+				{
+					System.out.println("drive CCW");
+					drive.drive(SPEED_SPIN, -SPEED_SPIN);
+				}
+				else
+				{
+					drive.drive(0,  0);
+				}
+			}
+		}
+		else
+		{
+			drive.drive(joystick.getRawAxis(1), joystick.getRawAxis(5));
+		}
+	}
 
-    /**
-     * This function is called periodically during autonomous
-     */
-    public void autonomousPeriodic(){
-
- /*   	String line = reader.readLine();
-    	double left = Double.valueOf(line.substring(0, line.indexOf(' ')));
-    	double right = Double.valueOf(line.substring(line.indexOf(' ') + 1, line.length() - 1));
-    	driveTrain.drive(left, right);
-*/
-    	if (autoClock++ < 100 && secondUltrasonic.getRangeInches() >= 36)
-    	{
-    		driveTrain.drive(LEFT_RATE,  RIGHT_RATE);
-    	}
-    	else
-    	{
-    		driveTrain.drive(0,  0);
-    	}
-    }
-
-    public void teleopInit() {
-    	
-    	ultrasonic.setEnabled(true);
-    	ultrasonic.setAutomaticMode(true);
-    	secondUltrasonic.setEnabled(true);
-    	secondUltrasonic.setAutomaticMode(true);
-    }
-    /**
-     * This function is called periodically during operator control
-     */
-    public void teleopPeriodic(){
-    	double axisOne = playerOne.getRawAxis(Xbox.LEFT_Y_AXIS);
-    	double axisFive = playerOne.getRawAxis(Xbox.RIGHT_Y_AXIS);
-    	if (playerOne.getRawAxis(Xbox.LEFT_TRIGGER) >= 0.1)
-    		driveTrain.drive(axisOne * 0.3, axisFive * 0.3);
-    	else if (axisOne > 0.09 || axisOne < -0.09 || axisFive > 0.09 || axisFive < -0.09) {
-    		driveTrain.drive(playerOne, Xbox.LEFT_Y_AXIS, Xbox.RIGHT_Y_AXIS);
-    	}
-    	else
-    		driveTrain.drive(0, 0);
-    	writer.write(String.valueOf(axisOne) + " " + String.valueOf(axisFive) + "\n");
-       // bigRoller.main(playerTwo, 5, 6, ultrasonic);
-       //ittleRoller.main(playerTwo, 3, 2, ultrasonic);
-        littleArms.main(playerTwo, 4);
-        bigArms.main(playerTwo, 3);
-        
-      	if (playerTwo.getRawAxis(Xbox.RIGHT_TRIGGER) >= 0.1 && ultrasonic.getRangeMM() > 150)
-      		littleRoller.set(0.45);
-      	else if (playerTwo.getRawAxis(Xbox.LEFT_TRIGGER) >= 0.1)
-      		littleRoller.set(-1);
-      	else
-      		littleRoller.set(0);
-      	if (playerTwo.getRawButton(Xbox.LB_BUTTON))
-      		bigRoller.set(0.75);
-      	else if (playerTwo.getRawButton(Xbox.RB_BUTTON))
-      		bigRoller.set(-0.75);
-      	else
-      		bigRoller.set(0);
-      	ultraLoop++;
-      	if (playerOne.getRawButton(Xbox.A_BUTTON))
-      		writer.close();
-      	if (ultraLoop % 30 == 0)
-      		System.out.println(secondUltrasonic.getRangeInches());
-    }
-    
-    /**
-     * This function is called periodically during test mode
-     */
-    public void testPeriodic() {
-    
-    }
-    
+	/**
+	 * This function is called periodically during test mode
+	 */
+	@Override
+	public void testPeriodic() {
+	}
 }
+
