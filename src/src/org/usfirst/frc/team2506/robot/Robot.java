@@ -6,9 +6,11 @@ import org.opencv.imgproc.Imgproc;
 import edu.wpi.cscore.CvSource;
 import edu.wpi.cscore.UsbCamera;
 import edu.wpi.cscore.VideoCamera.WhiteBalance;
+import edu.wpi.first.wpilibj.ADXRS450_Gyro;
 import edu.wpi.first.wpilibj.CameraServer;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.interfaces.Gyro;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj.vision.VisionThread;
@@ -24,6 +26,7 @@ public class Robot extends IterativeRobot {
 	private double centerX;
 	private VisionThread visionThread;
 	private final Object imgLock = new Object();
+	private Gyro gyro;
 	private Rect found;
 	
 	private static final int IMG_WIDTH = 320;
@@ -46,6 +49,10 @@ public class Robot extends IterativeRobot {
 	private double aspectHigh = 1000;
 	private GripPipeline pipeline;
 	private double angle = 0;
+	private int brightness = 10;
+	private int exposure = 10;
+	
+	private UsbCamera camera;
 	
 	/**
 	 * This function is run when the robot is first started up and should be
@@ -62,12 +69,21 @@ public class Robot extends IterativeRobot {
 		SmartDashboard.putNumber("areaMin", areaMin);
 		SmartDashboard.putNumber("aspectLow", aspectLow);
 		SmartDashboard.putNumber("aspectHigh", aspectHigh);
+		SmartDashboard.putNumber("brightness", brightness);
+		SmartDashboard.putNumber("exposure", exposure);
 
-		UsbCamera camera = CameraServer.getInstance().startAutomaticCapture();
+		gyro = new ADXRS450_Gyro();
+		gyro.calibrate();
+		
+		camera = CameraServer.getInstance().startAutomaticCapture();
+		System.out.println("resolution");
 		camera.setResolution(IMG_WIDTH, IMG_HEIGHT);
+		System.out.println("white balance");
 		camera.setWhiteBalanceManual(WhiteBalance.kFixedIndoor);
-		camera.setBrightness(10);
-		camera.setExposureManual(10);
+		System.out.println("brightness");
+		camera.setBrightness(brightness);
+		camera.setExposureManual(exposure);
+		
 		CvSource vsource = CameraServer.getInstance().putVideo("test", 320, 200);
 
 		pipeline = new GripPipeline(vsource);
@@ -122,6 +138,22 @@ public class Robot extends IterativeRobot {
 		pipeline.setAreaMin(areaMin);
 		pipeline.setAspectLow(aspectLow);
 		pipeline.setAspectHigh(aspectHigh);
+		
+		int newBrightness = (int) SmartDashboard.getNumber("brightness", 10);
+		int newExposure = (int) SmartDashboard.getNumber("exposure", 10);
+		
+		// check if brightness or exposure changed
+		if (newBrightness != brightness || newExposure != exposure)
+		{
+			// update camera calibration
+			camera.setBrightness(newBrightness);
+			camera.setExposureManual(newExposure);
+			camera.setWhiteBalanceManual(WhiteBalance.kFixedIndoor);
+			
+			// remember new values
+			brightness = newBrightness;
+			exposure = newExposure;
+		}
 		
 		boolean targetAcq = false;
 		
